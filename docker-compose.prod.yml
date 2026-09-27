@@ -64,8 +64,11 @@ services:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 15s
       timeout: 5s
-      retries: 5
-      start_period: 20s
+      # First boot creates the schema and seeds demo/reference data. On modest
+      # hosts that can take more than two minutes, so do not fail the dependent
+      # frontend while the backend is still making normal startup progress.
+      retries: 8
+      start_period: 180s
 
   frontend:
     build:
@@ -76,13 +79,28 @@ services:
       backend:
         condition: service_healthy
     ports:
-      - "${FRONTEND_PORT:-80}:80"
+      # Bind to 127.0.0.1 for domain deployments so only the host reverse
+      # proxy (Nginx/CasaOS gateway) can reach the unencrypted upstream.
+      - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-80}:80"
     healthcheck:
       test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:80/"]
       interval: 15s
       timeout: 5s
       retries: 3
       start_period: 10s
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    profiles:
+      - tunnel
+    depends_on:
+      frontend:
+        condition: service_healthy
+    command: tunnel --no-autoupdate run
+    environment:
+      # Keep the remotely managed tunnel token in the git-ignored .env file.
+      TUNNEL_TOKEN: ${TUNNEL_TOKEN:-}
 
   qdrant:
     image: qdrant/qdrant:v1.12.5
