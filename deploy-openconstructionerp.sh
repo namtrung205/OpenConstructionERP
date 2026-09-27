@@ -1,23 +1,21 @@
 #!/usr/bin/env bash
 #
 # deploy-openconstructionerp.sh
-# Deploy OpenConstructionERP (fork: namtrung205/OpenConstructionERP, branch main)
-# on Ubuntu using Docker Compose.
+# Deploy OpenConstructionERP on Ubuntu using Docker Compose.
+# This script lives inside the repo itself — run it from a clone/checkout
+# of your fork (namtrung205/OpenConstructionERP), no separate git clone step.
 #
 # Usage:
 #   ./deploy-openconstructionerp.sh                          # deploy on localhost:8080
 #   ./deploy-openconstructionerp.sh -d example.com            # + nginx reverse proxy + TLS (certbot)
 #   ./deploy-openconstructionerp.sh -p 9090                   # custom host port
 #
-# Re-running the script is safe: it pulls the latest commit on the branch,
-# keeps the existing .env, and re-runs docker compose up -d.
+# Re-running the script is safe: it pulls the latest commit (if this is a
+# git checkout), keeps the existing .env, and re-runs docker compose up -d.
 
 set -euo pipefail
 
 # ----------------------------- Config ---------------------------------
-REPO_URL="https://github.com/namtrung205/OpenConstructionERP.git"
-BRANCH="main"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/OpenConstructionERP}"
 HOST_PORT="8080"
 DOMAIN=""
 DISABLE_DEMO="1"     # 1 = disable demo accounts (recommended for internet-exposed deploys)
@@ -54,23 +52,16 @@ $DOCKER compose version >/dev/null 2>&1 || { echo "docker compose plugin not fou
 
 sudo systemctl enable --now docker >/dev/null 2>&1 || true
 
-# ----------------------------- Git ---------------------------------------
-if ! command -v git >/dev/null 2>&1; then
-  log "Installing git..."
-  sudo apt update && sudo apt install -y git
-fi
+# ----------------------------- Repo dir -----------------------------------
+# Assume this script sits at the root of the repo checkout. cd there
+# regardless of where the script was invoked from.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
 
-if [[ -d "$INSTALL_DIR/.git" ]]; then
-  log "Repo already present, pulling latest ($BRANCH)..."
-  git -C "$INSTALL_DIR" fetch origin "$BRANCH"
-  git -C "$INSTALL_DIR" checkout "$BRANCH"
-  git -C "$INSTALL_DIR" pull origin "$BRANCH"
-else
-  log "Cloning $REPO_URL ($BRANCH)..."
-  git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+if [[ -d .git ]] && command -v git >/dev/null 2>&1; then
+  log "Existing git checkout detected, pulling latest changes..."
+  git pull || log "git pull failed — continuing with the code already on disk."
 fi
-
-cd "$INSTALL_DIR"
 
 # ----------------------------- .env ---------------------------------------
 if [[ ! -f .env ]]; then
@@ -144,11 +135,12 @@ NGINX
 
   log "Done. App available at: https://${DOMAIN}"
 else
-  log "Done. App available at: http://$(curl -fsS ifconfig.me 2>/dev/null || echo <server-ip>):${HOST_PORT}"
+  server_ip="$(curl -fsS ifconfig.me 2>/dev/null || echo YOUR_SERVER_IP)"
+  log "Done. App available at: http://${server_ip}:${HOST_PORT}"
 fi
 
 echo
-echo "Useful commands:"
-echo "  cd $INSTALL_DIR && $DOCKER compose -f $COMPOSE_FILE logs -f app"
-echo "  cd $INSTALL_DIR && $DOCKER compose -f $COMPOSE_FILE restart"
-echo "  cd $INSTALL_DIR && git pull && $DOCKER compose -f $COMPOSE_FILE up -d --build   # update"
+echo "Useful commands (from $SCRIPT_DIR):"
+echo "  $DOCKER compose -f $COMPOSE_FILE logs -f app"
+echo "  $DOCKER compose -f $COMPOSE_FILE restart"
+echo "  git pull && $DOCKER compose -f $COMPOSE_FILE up -d --build   # update (or just re-run this script)"
