@@ -124,22 +124,27 @@ fi
 log "Using compose file: $COMPOSE_FILE"
 
 COMPOSE_PROFILE_ARGS=()
+COMPOSE_FILE_ARGS=(-f "$COMPOSE_FILE")
 if [[ "$CLOUDFLARE_TUNNEL" == "1" ]]; then
   COMPOSE_PROFILE_ARGS=(--profile tunnel)
+  COMPOSE_FILE_ARGS+=(-f docker-compose.tunnel.yml)
 fi
 
 log "Building and starting containers (this can take a few minutes on first run)..."
-$DOCKER compose "${COMPOSE_PROFILE_ARGS[@]}" -f "$COMPOSE_FILE" up -d --build
+$DOCKER compose "${COMPOSE_PROFILE_ARGS[@]}" "${COMPOSE_FILE_ARGS[@]}" up -d --build
 
-log "Waiting for the app to respond on port $HOST_PORT..."
+log "Waiting for the app to respond..."
 for i in $(seq 1 30); do
-  if curl -fsS "http://127.0.0.1:${HOST_PORT}" >/dev/null 2>&1; then
+  if [[ "$CLOUDFLARE_TUNNEL" == "1" ]]; then
+    $DOCKER compose "${COMPOSE_PROFILE_ARGS[@]}" "${COMPOSE_FILE_ARGS[@]}" \
+      exec -T frontend wget -qO /dev/null http://localhost:80/ >/dev/null 2>&1 && break
+  elif curl -fsS "http://127.0.0.1:${HOST_PORT}" >/dev/null 2>&1; then
     break
   fi
   sleep 5
 done
 
-$DOCKER compose "${COMPOSE_PROFILE_ARGS[@]}" -f "$COMPOSE_FILE" ps
+$DOCKER compose "${COMPOSE_PROFILE_ARGS[@]}" "${COMPOSE_FILE_ARGS[@]}" ps
 
 # ----------------------------- Firewall -------------------------------------
 if command -v ufw >/dev/null 2>&1 && sudo ufw status | grep -q "Status: active"; then
@@ -164,7 +169,7 @@ if [[ "$CLOUDFLARE_TUNNEL" == "1" ]]; then
   echo "  Service:  http://frontend:80"
   echo
   echo "No router port-forwarding or inbound port 80/443 is required."
-  log "Application upstream is ready at http://127.0.0.1:${HOST_PORT}"
+  log "Application is available to the tunnel at http://frontend:80"
 elif [[ -n "$DOMAIN" ]] && sudo ss -H -ltnp 'sport = :80' 2>/dev/null | grep -q 'casaos-gateway'; then
   log "CasaOS gateway owns ports 80/443; leaving TLS and domain routing to CasaOS."
   echo
@@ -209,12 +214,14 @@ echo
 echo "Useful commands (from $SCRIPT_DIR):"
 COMPOSE_ENV="FRONTEND_PORT=$HOST_PORT"
 COMPOSE_PROFILE=""
+COMPOSE_FILES="-f $COMPOSE_FILE"
 if [[ -n "$DOMAIN" ]]; then
   COMPOSE_ENV="FRONTEND_BIND=127.0.0.1 FRONTEND_PORT=$HOST_PORT ALLOWED_ORIGINS=https://$DOMAIN"
 fi
 if [[ "$CLOUDFLARE_TUNNEL" == "1" ]]; then
   COMPOSE_PROFILE="--profile tunnel"
+  COMPOSE_FILES="-f $COMPOSE_FILE -f docker-compose.tunnel.yml"
 fi
-echo "  $COMPOSE_ENV $DOCKER compose $COMPOSE_PROFILE -f $COMPOSE_FILE logs -f backend frontend cloudflared"
-echo "  $COMPOSE_ENV $DOCKER compose $COMPOSE_PROFILE -f $COMPOSE_FILE restart"
-echo "  git pull && $COMPOSE_ENV $DOCKER compose $COMPOSE_PROFILE -f $COMPOSE_FILE up -d --build   # update (or just re-run this script)"
+echo "  $COMPOSE_ENV $DOCKER compose $COMPOSE_PROFILE $COMPOSE_FILES logs -f backend frontend cloudflared"
+echo "  $COMPOSE_ENV $DOCKER compose $COMPOSE_PROFILE $COMPOSE_FILES restart"
+echo "  git pull && $COMPOSE_ENV $DOCKER compose $COMPOSE_PROFILE $COMPOSE_FILES up -d --build   # update (or just re-run this script)"

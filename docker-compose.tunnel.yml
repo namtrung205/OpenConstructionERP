@@ -1,0 +1,5 @@
+# Cloudflare Tunnel reaches the frontend directly as http://frontend:80 on
+# the Compose network. Do not publish an unnecessary host port in this mode.
+services:
+  frontend:
+    ports: !reset []
