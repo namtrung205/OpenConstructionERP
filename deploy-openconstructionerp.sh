@@ -137,7 +137,7 @@ log "Waiting for the app to respond..."
 for i in $(seq 1 30); do
   if [[ "$CLOUDFLARE_TUNNEL" == "1" ]]; then
     $DOCKER compose "${COMPOSE_PROFILE_ARGS[@]}" "${COMPOSE_FILE_ARGS[@]}" \
-      exec -T frontend wget -qO /dev/null http://localhost:80/ >/dev/null 2>&1 && break
+      exec -T frontend wget -qO /dev/null http://127.0.0.1:80/ >/dev/null 2>&1 && break
   elif curl -fsS "http://127.0.0.1:${HOST_PORT}" >/dev/null 2>&1; then
     break
   fi

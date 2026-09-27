@@ -83,7 +83,9 @@ services:
       # proxy (Nginx/CasaOS gateway) can reach the unencrypted upstream.
       - "${FRONTEND_BIND:-0.0.0.0}:${FRONTEND_PORT:-80}:80"
     healthcheck:
-      test: ["CMD", "wget", "-qO", "/dev/null", "http://localhost:80/"]
+      # Use the IPv4 loopback explicitly. In newer nginx-alpine images,
+      # localhost may resolve to ::1 while this server listens on IPv4 only.
+      test: ["CMD", "wget", "-qO", "/dev/null", "http://127.0.0.1:80/"]
       interval: 15s
       timeout: 5s
       retries: 3
